@@ -1,2 +1,2 @@
-# Modules
-node_modules/
+target
+Cargo.lock
