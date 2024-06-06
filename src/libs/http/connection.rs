@@ -12,3 +12,7 @@ impl fmt::Display for HttpConnectionStatus {
         }
     }
 }
+
+pub enum HttpHandler {
+    Account,
+}

@@ -1,7 +1,9 @@
-use super::connection::HttpConnectionStatus;
+#![allow(dead_code)]
+use super::connection::{HttpConnectionStatus, HttpHandler};
 use crate::libs::logs::main::LogsInstance;
 
 use std::{
+    io::{Read, Write},
     net::{IpAddr, TcpListener, TcpStream},
     sync::mpsc,
 };
@@ -11,7 +13,6 @@ pub struct HttpInstance {
     address: IpAddr,
     status: HttpConnectionStatus,
     listener: Option<TcpListener>,
-    thread_channel: Option<mpsc::Sender<HttpInstance>>,
 }
 
 impl HttpInstance {
@@ -49,27 +50,37 @@ impl HttpInstance {
             address: _address,
             status: _status,
             listener: _listener,
-            thread_channel: None,
         }
     }
 
-    /// Start listening to the address and port set
-    pub fn infinity_listen(mut self, channel: mpsc::Sender<HttpInstance>) {
-        // Update thread communication channel
-        self.thread_channel = Some(channel);
-
+    /// Start listening to the address and port set calling the function handle_http_stream
+    pub fn infinity_listen(self, channel: mpsc::Sender<HttpInstance>) {
         // Check if listener exist
         match self.listener {
             Some(listener) => {
-                LogsInstance::print("Http instance started listening", colored::Color::Green);
-                for stream in listener.incoming() {
-                    let _stream: TcpStream = stream.unwrap();
+                LogsInstance::print(
+                    format!(
+                        "Http instance started listening in {}:{}",
+                        self.address, self.port
+                    )
+                    .as_str(),
+                    colored::Color::Green,
+                );
 
-                    println!("Connection established!");
+                // Try to listen the stream
+                for stream in listener.incoming() {
+                    match stream {
+                        // Handling the http stream
+                        Ok(stream) => handle_http_stream(stream, channel.clone()),
+                        Err(_) => return,
+                    };
                 }
             }
             None => {
-                LogsInstance::print("Error, cannot listen a bind not set, http requisitions will not be received", colored::Color::Red);
+                LogsInstance::print(
+                    "Error, cannot listen a bind not set, http requisitions will not be received",
+                    colored::Color::Red,
+                );
             }
         }
     }
@@ -87,5 +98,32 @@ impl HttpInstance {
     /// Receives the port of the instance
     pub fn get_port(self) -> u16 {
         self.port
+    }
+
+    /// Returns the response if exist
+    pub fn get_response() -> HttpHandler {
+        HttpHandler::Account
+    }
+}
+
+fn handle_http_stream(mut stream: TcpStream, channel: mpsc::Sender<HttpInstance>) {
+    // 512 bytes limit for the buffer
+    let mut buffer: [u8; 512] = [0; 512];
+
+    match stream.read(&mut buffer) {
+        Ok(bytes_read) => {
+            // Read received response as utf8
+            let request = match std::str::from_utf8(&buffer[..bytes_read]) {
+                Ok(character) => character,
+                Err(_) => "NULL",
+            };
+
+            println!("Requisição recebida: {}", request);
+        }
+        Err(_) => {
+            let error_response = "HTTP/1.1 400 Bad Request\r\n\r\nOverflow";
+            _ = stream.write(error_response.as_bytes());
+            _ = stream.flush();
+        }
     }
 }
